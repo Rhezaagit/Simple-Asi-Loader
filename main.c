@@ -1,10 +1,63 @@
 //Written By Rhezaagit
 
 #include <processthreadsapi.h>
+#include <stdlib.h>
 #include <string.h>
 #include <windows.h>
 #include <stdio.h>
 #include "vorbis_data.h"
+
+char** IgnoredModList = NULL;
+unsigned int IgnoredListModSize = 0;
+
+void AddIgnoredMod(const char* str) {
+    char** NewIgnoredModList = realloc(IgnoredModList, IgnoredListModSize * sizeof(char*));
+    NewIgnoredModList[IgnoredListModSize] = strdup(str);
+    IgnoredListModSize++;
+    IgnoredModList = NewIgnoredModList;
+}
+
+void LoadSettings(const char* FilePath) {
+    FILE* f = fopen(FilePath, "r");
+    if (!f) {
+        f = fopen("./SimpleAsiLoader.ini", "w");
+        fwrite(NULL, 0, 0, f);
+
+        fclose(f);
+        return;
+    }
+
+    unsigned int size = 0;
+    fseek(f, 0, SEEK_END);
+    size = ftell(f);
+    rewind(f);
+
+    char* Buf = malloc(size + 1);
+    fread(Buf, 1, size, f);
+    size[Buf] = '\0'; // What
+
+    char word[256] = {0};
+    BOOL isignore = FALSE;
+    for (unsigned int i = 0, p = 0; i < size; i++) {
+        const char c = i[Buf]; // Who Made This?
+
+        if (c == ' ' || c == '\n' || c == '\0') {
+            if (strcmp(word, "[ignore]") == 0) {
+                isignore = !isignore;
+            }
+
+            else if (c == ' ' || c == '\n') {
+                AddIgnoredMod(word);
+            }
+
+            memset(word, 0, 255);
+            p = 0;
+        } else p++[word] = i[Buf]; // Nah
+    }
+
+    free(Buf);
+    fclose(f);
+}
 
 //log so you can see Log Of the Modloader 
 void LogMod(const char* text) {
@@ -28,12 +81,23 @@ void LoadAsi(const char* folderPath) {
             strset(paths, 0);
             sprintf(paths, "%s/%s", folderPath, data.cFileName);
 
-            strset(Logs, 0);
-            LoadLibraryA(paths) ? 
-                sprintf(Logs, "Success Loading %s", data.cFileName) : 
-                sprintf(Logs, "Failed Loading %s", data.cFileName);
+            BOOL finded = FALSE;
+            for (unsigned int i = 0; i < IgnoredListModSize; i++) {
+                if (strcmp(data.cFileName, IgnoredModList[i]) == 0) {
+                    finded = TRUE;
+                    break;
+                }
+            }
 
-            LogMod(Logs);
+            strset(Logs, 0);
+            if (!finded) {
+                LoadLibraryA(paths) ? 
+                    sprintf(Logs, "Success Loading %s", data.cFileName) : 
+                    sprintf(Logs, "Failed Loading %s", data.cFileName);
+
+                LogMod(Logs);
+            }
+
         } while (FindNextFile(HFind, &data));
     }
 
@@ -71,8 +135,14 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     	ResetLog();
     
         CreateOriginal();
+        LoadSettings("./SimpleAsiLoader.ini");
         LoadAsi("./");
         LoadAsi("./scripts/");
+    } else if (fdwReason == DLL_PROCESS_DETACH) {
+        if (!IgnoredModList) return TRUE;
+        for (unsigned int i = 0; i < IgnoredListModSize; i++) free(IgnoredModList[i]);
+        free(IgnoredModList);
     }
+
     return TRUE;
 }
